@@ -19,8 +19,8 @@ class UDPServerThread:
 
     def startServer(self):
         self.serverSocket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.serverSocket.bind(('',self.port))
-        print(f"UDP Server listening on Port: {self.port}")
+        self.serverSocket.bind(('localhost',self.portNumber))
+        print(f"UDP Server listening on Port: {self.portNumber}")
 
         while True:
             data, clientAddress = self.serverSocket.recvfrom(1024)
@@ -35,7 +35,7 @@ class UDPServerThread:
             return
 
         if magic != self.magicNumber or version != self.versionNumber:
-            print(f"Invalid packet received from {clientAddress}, Ignored")
+            print(f"Magic number & version issue: Invalid packet received from {clientAddress}, Ignored")
             return
         
         with self.sessionLock:
