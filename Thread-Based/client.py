@@ -1,4 +1,5 @@
-import _socket
+import socket
+import sys
 import threading
 from uuid import uuid4
 import struct
@@ -11,7 +12,7 @@ class UAPThreadedClient:
     def __init__(self, serverAddress: tuple, default_timer = 100):
         self._is_alive = True  # client is now working
         self._DEFAULT_TIMER = default_timer  # default timeout
-        self._socket = _socket.socket(_socket.AF_INET, _socket.SOCK_DGRAM)  # UDP
+        self._socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)  # UDP
         self._socket.connect(serverAddress)
         self._timer = 0
         self._sequence_num = 0
@@ -129,8 +130,10 @@ class UAPThreadedClient:
             else:
                 break
         _receiving_thread.join()
+        _input_thread.join()
 
 
 if __name__ == '__main__':
-    client = UAPThreadedClient(("", 12345))
+    server_address = (sys.argv[1], sys.argv[2])
+    client = UAPThreadedClient(server_address)
     client.connect()
