@@ -130,6 +130,7 @@ class UDPServerThread:
         with self.sessionLock:
             session = self.sessionStorage.get(sessionID)
             if session:
+                session['logicalClock'] += 1
                 helloMessage = struct.pack('!HBBIIQI', self.magicNumber, self.versionNumber, 0, session['seq_num'], sessionID, session['logicalClock'], 0)
                 self.serverSocket.sendto(helloMessage, clientAddress)
                 print(f"HELLO message sent to client {clientAddress}.")
@@ -138,6 +139,7 @@ class UDPServerThread:
         with self.sessionLock:
             session = self.sessionStorage.get(sessionID)
             if session:
+                session['logicalClock'] += 1
                 goodbyeMessage = struct.pack('!HBBIIQI', self.magicNumber, self.versionNumber, 3, self.sequenceNumber, sessionID, session['logicalClock'], 0)
                 self.serverSocket.sendto(goodbyeMessage, clientAddress)
                 print(f"GOODBYE message sent to client {clientAddress}.")
@@ -147,6 +149,7 @@ class UDPServerThread:
         with self.sessionLock:
             session = self.sessionStorage.get(sessionID)
             if session:
+                session['logicalClock'] += 1
                 aliveMessage = struct.pack('!HBBIIQI', self.magicNumber, self.versionNumber, 2, self.sequenceNumber, sessionID, session['logicalClock'], 0)
                 self.serverSocket.sendto(aliveMessage, clientAddress)
                 print(f"ALIVE message sent to client {clientAddress}.")
