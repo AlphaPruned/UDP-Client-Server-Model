@@ -63,7 +63,7 @@ class UAPThreadedClient:
         self._received_state = _message[2]  # extract command
         if self._received_state not in range(0,4):
             raise Exception('Protocol Error: Command Invalid')
-        self._logical_clock += 1
+        self._logical_clock = max(_message[5], self._logical_clock)+1
 
     def _wait(self):
         while self._timer>=0:
