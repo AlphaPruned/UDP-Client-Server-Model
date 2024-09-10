@@ -1,127 +1,136 @@
-import sockets
+import _socket
 import threading
 from uuid import uuid4
 import struct
 
-DEFAULT_TIMER = 100
-FORMAT = '!HBBIIQI'
-EOF = ''
 
 class UAPThreadedClient:
-	HELLO_WAIT, READY, READY_WAIT, CLOSING, CLOSED = 0, 1, 2, 3, 4
+    _HELLO_WAIT, _READY, _READY_WAIT, _CLOSING, _CLOSED = 0, 1, 2, 3, 4
+    _FORMAT = '!HBBIIQI'
 
-	def UAPThreadedClient(self, serverAddress):
-		self.is_alive = True
-		self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-		self.socket.connect(serverAddress)
-		self.timer = 0
-		self.sequence_num = 0
-		self.magic_num = hex(50273)
-		self.version = 1
-		self.session_id = uuid4()
-		self.logical_clock = 0
-		self.state = 0
-		self.received_state
+    def __init__(self, serverAddress: tuple, default_timer = 100):
+        self._is_alive = True  # client is now working
+        self._DEFAULT_TIMER = default_timer  # default timeout
+        self._socket = _socket.socket(_socket.AF_INET, _socket.SOCK_DGRAM)  # UDP
+        self._socket.connect(serverAddress)
+        self._timer = 0
+        self._sequence_num = 0
+        self._magic_num = hex(50273)  # for header
+        self._version = 1  # for header
+        self._session_id = uuid4()
+        self._logical_clock = 0
+        self._state = self._HELLO_WAIT
+        self._received_state = -1
+        self._message = ""
 
-	def header_prep(self, command, data_length):
-		return struct.pack(FORMAT, self.magic_num, self.version, command, self.sequence_num, self.session_id, self.logical_clock, data_length)
+    def _header_prep(self, command: int, data_length=0):
+        return struct.pack(self._FORMAT, self._magic_num, self._version, command, self._sequence_num, self._session_id, self._logical_clock, data_length)
 
-	def send_hello(self):
-		# send hello message
-		header = self.header_prep(0, 0)
-		self.socket.send(header)
+    def _send_hello(self):
+        # send hello _message
+        header = self._header_prep(0)
+        self._socket.send(header)
 
-		# set timer
-		self.logical_clock += 1
+        # set _timer
+        self._logical_clock += 1
 
-	def send_goodbye(self):
-		# send goodbye
-		header = self.header_prep(3, 0)
-		self.socket.send(header)
+    def _send_goodbye(self):
+        # send goodbye
+        header = self._header_prep(3)
+        self._socket.send(header)
 
-		self.logical_clock += 1
-	
-	def close(self): # to change
-		self.is_alive = False
-		self.logical_clock += 1
-		self.socket.close()
+        self._logical_clock += 1
 
-	def send_data(self, data):
-		# send data
-		message = data.encode('ascii')
-		header = self.header_prep(1, len(message))
-		self.socket.send(header+message)
+    def _close(self): # to change
+        self._is_alive = False
+        self._logical_clock += 1
+        self._socket.close()
 
-		# increment sequence
-		self.sequence_num += 1
+    def _send_data(self, data: str):
+        # send data
+        _message = data.encode('ascii')
+        header = self._header_prep(1, len(_message))
+        self._socket.send(header+_message)
 
-		# set timer
-		self.logical_clock += 1
+        # increment sequence
+        self._sequence_num += 1
 
-	def receive_data(self):
-		message = struct.unpack(FORMAT, self.socket.recv(1024))
-		self.received_state = message[2]
-		if self.received_state not in range(0,4):
-			raise Exception('Protocol Error: Command Invalid')
-		
-	def wait(self):
-		while(self.timer>=0):
-			if self.timer == -1:
-				break
-			self.timer-=1
+        # set _timer
+        self._logical_clock += 1
 
-	def connect(self):
-		receivingThread = threading.Thread(target = self.receive_data)
-		receivingThread.start()
-		
-		inputThread = threading.Thread(target = input())
-		inputThread.start()
+    def _receive_data(self):
+        _message = struct.unpack(self._FORMAT, self._socket.recv(1024))
+        self._received_state = _message[2]  # extract command
+        if self._received_state not in range(0,4):
+            raise Exception('Protocol Error: Command Invalid')
+        self._logical_clock += 1
 
-		while(True):
-			if self.state == HELLO_WAIT: # HELLO WAIT
-				self.send_hello()
-				self.timer = DEFAULT_TIMER
-				self.wait()
+    def _wait(self):
+        while self._timer>=0:
+            if self._timer == -1:  # _timer has been cancelled
+                break
+            self._timer-=1
 
-				if self.received_state == 0: # got hello message
-					self.timer = -1 # cancel timer
-					self.state = READY # move to ready
-				if self.timer == 0:
-					self.send_goodbye()
-					self.state = CLOSING # move to closing
-			elif self.state == READY: # READY
-				if self.message!='q' or self.message!='':
-					self.send_data(self.message)
-					self.timer = DEFAULT_TIMER
-					self.state = READY_WAIT # move to ready timer
-				else:
-					self.send_goodbye()
-					self.state = CLOSING # move to closing
-				if self.received_state == 2: # got alive message
-					pass
-			elif self.state == READY_WAIT: # READY TIMER
-				if self.message!='q' or self.message!='':
-					self.send_data(self.message)
-					self.wait()
-				else:
-					self.send_goodbye()
-					self.state = CLOSING # move to closing
-				if self.received_state == 2: # got alive message
-					self.timer = -1 # cancel timer
-					self.state = READY # move to ready
-				if self.timer == 0: # timeout
-					self.send_goodbye()
-					self.state = CLOSING # move to closing
-			elif state == CLOSING:
-				if self.received_state == 2: # got alive message
-					pass
-				else:
-					self.state = CLOSED
-				if self.timer == 0: # timeout
-					self.state = CLOSED
-			elif state == CLOSED:
-				self.close()
-				break
-			else:
-				break
-		receivingThread.join()
+    def _client_message(self):
+        self._message = input()
+
+    def connect(self):
+        _receiving_thread = threading.Thread(target = self._receive_data)
+        _receiving_thread.start()
+
+        _input_thread = threading.Thread(target = self._client_message)
+        _input_thread.start()
+
+        while True:
+            if self._state == self._HELLO_WAIT: # HELLO WAIT
+                self._send_hello()
+                self._timer = self._DEFAULT_TIMER
+                self._wait()
+
+                if self._received_state == 0: # got hello _message
+                    self._timer = -1 # cancel _timer
+                    self._state = self._READY # move to ready
+                if self._timer == 0:  # timeout
+                    self._send_goodbye()
+                    self._state = self._CLOSING # move to closing
+            elif self._state == self._READY: # _READY
+                if self._message!='q' or self._message!='':  # q or EOF
+                    self._send_data(self._message)
+                    self._timer = self._DEFAULT_TIMER
+                    self._state = self._READY_WAIT # move to ready _timer
+                else:
+                    self._send_goodbye()
+                    self._state = self._CLOSING # move to closing
+                if self._received_state == 2: # got alive _message
+                    pass
+            elif self._state == self._READY_WAIT: # _READY TIMER
+                if self._message!='q' or self._message!='':
+                    self._send_data(self._message)
+                    self._wait()
+                else:
+                    self._send_goodbye()
+                    self._state = self._CLOSING # move to closing
+                if self._received_state == 2: # got alive _message
+                    self._timer = -1 # cancel _timer
+                    self._state = self._READY # move to ready
+                if self._timer == 0: # timeout
+                    self._send_goodbye()
+                    self._state = self._CLOSING # move to closing
+            elif self._state == self._CLOSING:
+                if self._received_state == 2: # got alive _message
+                    pass
+                else:
+                    self._state = self._CLOSED
+                if self._timer == 0: # timeout
+                    self._state = self._CLOSED
+            elif self._state == self._CLOSED:
+                self._close()
+                break
+            else:
+                break
+        _receiving_thread.join()
+
+
+if __name__ == '__main__':
+    client = UAPThreadedClient(("", 12345))
+    client.connect()
