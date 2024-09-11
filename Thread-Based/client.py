@@ -1,7 +1,7 @@
 import socket
 import sys
 import threading
-from uuid import *
+from random import random
 import struct
 
 
@@ -16,54 +16,96 @@ class UAPThreadedClient:
         self._socket.connect(serverAddress)
         self._timer = 0
         self._sequence_num = 0
-        self._magic_num, self._version, self._session_id = 0xc461, 1, 0
+        self.server_address = serverAddress
+        self._magic_num, self._version, self._session_id = 0xC461, 1, int(random()*100)
         self._logical_clock = 0
         self._state = self._HELLO_WAIT
         self._received_state = -1
         self._message = ""
 
     def _header_prep(self, command: int, data_length=0):
-        print(self._FORMAT, self._magic_num, self._version, command, self._sequence_num, self._session_id, self._logical_clock, data_length)
         return struct.pack(self._FORMAT, self._magic_num, self._version, command, self._sequence_num, self._session_id, self._logical_clock, data_length)
 
     def _send_hello(self):
-        # send hello _message
+        # send hello
         header = self._header_prep(0)
-        self._socket.send(header)
+        self._socket.sendto(header, self.server_address)
 
-        # set _timer
+        # set timer
         self._logical_clock += 1
+
+        print(f"HELLO sent to {self.server_address}")
 
     def _send_goodbye(self):
         # send goodbye
         header = self._header_prep(3)
-        self._socket.send(header)
+        self._socket.sendto(header, self.server_address)
 
+        # update timer
         self._logical_clock += 1
+
+        print(f"GOODBYE sent to {self.server_address}")
 
     def _close(self): # to change
         self._is_alive = False
         self._logical_clock += 1
         self._socket.close()
+        print("Socket closed")
 
     def _send_data(self, data: str):
         # send data
         _message = data.encode('ascii')
         header = self._header_prep(1, len(_message))
-        self._socket.send(header+_message)
+        self._socket.sendto(header + _message, self.server_address)
 
-        # increment sequence
+        # update sequence
         self._sequence_num += 1
 
-        # set _timer
+        # update timer
         self._logical_clock += 1
 
+        print(f"DATA sent: {data}")
+
     def _receive_data(self):
-        _message = struct.unpack(self._FORMAT, self._socket.recv(1024))
-        self._received_state = _message[2]  # extract command
-        if self._received_state not in range(0,4):
-            raise Exception('Protocol Error: Command Invalid')
-        self._logical_clock = max(_message[5], self._logical_clock)+1
+        while self._is_alive:
+            try:
+                data, _ = self._socket.recvfrom(1024)
+                print(f"Data received: {data}")
+
+                # get the response from server
+                command = struct.unpack(self._FORMAT, data[:24])[2]
+                self._received_state = command
+            except socket.error as e:
+                print(f"Response Error: {e}")
+                break
+
+    def _client_message(self):
+        while self._is_alive:
+            try:
+                self._message = input("Enter message: ")
+            except EOFError:
+                print("\nEOF received, closing connection.")
+                self._send_goodbye()
+                break
+        # receive_data
+        # if command == 3:
+                #     print("Received GOODBYE from server")
+                #     self._close()
+                # elif command == 0:
+                #     self._session_id = session_id
+                #     print(f"Session ID established: {self._session_id}")
+                # elif command == 2:
+                #     print("Received ALIVE")
+                # elif command == 1:
+                #     payload = data[24:]
+                #     print(f"Received DATA: {payload.decode()}")
+
+
+        # _message = struct.unpack(self._FORMAT, self._socket.recv(1024))
+        # self._received_state = _message[2]  # extract command
+        # if self._received_state not in range(0,4):
+        #     raise Exception('Protocol Error: Command Invalid')
+        # self._logical_clock = max(_message[5], self._logical_clock)+1
 
     def _wait(self):
         while self._timer>0:
@@ -71,17 +113,14 @@ class UAPThreadedClient:
                 break
             self._timer-=1
 
-    def _client_message(self):
-        self._message = input()
+    # def _client_message(self):
+    #     self._message = input()
 
     def connect(self):
-        _receiving_thread = threading.Thread(target = self._receive_data)
-        _receiving_thread.start()
+        threading.Thread(target=self._receive_data, daemon=True).start()
+        threading.Thread(target=self._client_message, daemon=True).start()
 
-        _input_thread = threading.Thread(target = self._client_message)
-        _input_thread.start()
-
-        while True:
+        while self._is_alive:
             if self._state == self._HELLO_WAIT: # HELLO WAIT
                 print('HELLO WAIT')
                 self._send_hello()
@@ -97,7 +136,7 @@ class UAPThreadedClient:
                     self._state = self._CLOSING # move to closing
             elif self._state == self._READY: # _READY
                 print('READY')
-                if self._message!='q' or self._message!='':  # q or EOF
+                if self._message!='q':  # not quitting
                     self._send_data(self._message)
                     self._timer = self._DEFAULT_TIMER
                     self._state = self._READY_WAIT # move to ready _timer
@@ -108,7 +147,7 @@ class UAPThreadedClient:
                     pass
             elif self._state == self._READY_WAIT: # _READY TIMER
                 print('READY WAIT')
-                if self._message!='q' or self._message!='':
+                if self._message!='q': # not quitting
                     self._send_data(self._message)
                     self._wait()
                 else:
@@ -135,10 +174,6 @@ class UAPThreadedClient:
             else:
                 break
         print('closing; bye bye')
-        _receiving_thread.shutdown = True
-        _receiving_thread.join()
-        _input_thread.shutdown = True
-        _input_thread.join()
 
 
 if __name__ == '__main__':
