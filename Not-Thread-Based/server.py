@@ -4,67 +4,6 @@ import struct
 import asyncio
 import sys
 
-
-# class UAPAsyncServer:
-#     RECEIVE, DONE = 0, 1
-#     DEFAULT_TIMER = 10000000
-#     FORMAT = '!HBBIIQI'
-#
-#     def __init__(self, port, host='localhost'):
-#         self.state = self.RECEIVE
-#         self.host = host
-#         self.port = port
-#         self.sessionData = {}
-#         self.timer = 0
-#         self.is_alive = True
-#         self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-#         self.socket.bind((self.host, self.port))
-#         self.logical_clock = 0
-#         self.magic_num, self.version = 0xC461, 1
-#         self.received_header = tuple()
-#         self.received_message = ""
-#
-#     def header_prep(self, command):
-#         return struct.pack(self._FORMAT, self._magic_num, self._version, command, self._sequence_num, self._session_id, self._logical_clock, 0)
-#
-#     def receive_data(self):
-#         # receive message
-#         message,clientAddress = self.socket.recvfrom(1024)
-#         header = struct.unpack(self.FORMAT, message[:24])
-#
-#         # process the request
-#         self.received_header = header[:6]
-#
-#         # collect data
-#         data_length = header[6]
-#         self.received_message = message[:] if data_length!=0 else ""
-#
-#         # increment logical clock
-#         self.logical_clock += 1
-#
-#     def send_data(self, command, clientAddress):
-#         header = self.header_prep(command)
-#         self.socket.sendto(header, clientAddress)
-#
-#     def wait(self):
-#         while(self.timer>0):
-#             if self.timer == -1:
-#                 break
-#             self.timer-=1
-#
-#     def connect(self):
-#         while self.is_alive:
-#             if self.state == self.RECEIVE:
-#                 print("RECEIVE")
-#                 magic_num, version, command, sequence_num, session_id, logical_clock = self.received_header
-#                 if magic_num != self.magic_num or version != self.version:
-#                     raise Exception("Protocol Error: Magic num or version error")
-#                 if command not in range(0, 4):
-#                     raise Exception("Protocol Error: Invalid command sent")
-#
-#                 if command == 0:  # got HELLO
-
-
 class UAPAsyncServer:
     FORMAT = '!HBBIIQI'
     HELLO, DATA, GOODBYE = 0, 1, 2
