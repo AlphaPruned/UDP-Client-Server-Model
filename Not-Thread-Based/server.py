@@ -1,122 +1,120 @@
 #!/usr/bin/env python3
 
-import struct
 import asyncio
+import struct
 import sys
 
-class UAPAsyncServer:
+class UAPAsyncUDPServer(asyncio.DatagramProtocol):
     FORMAT = '!HBBIIQI'
-    HELLO, DATA, GOODBYE = 0, 1, 2
+    HELLO, DATA, ALIVE, GOODBYE = 0, 1, 2, 3  # Command definitions
 
-    def __init__(self, host="localhost", port=12345, timer=10):
-        self.host = host
-        self.magic_num, self.version = 0xC461, 1
+    def __init__(self, port, timer=10):
+        self.magic_num = 0xC461
+        self.version = 1
         self.port = port
         self.DEFAULT_TIMER = timer
-        self.server = None
         self.sessionData = {}
         self.received_message = ""
 
-    async def receive_data(self, reader, writer):
-        addr = writer.get_extra_info('peername')
-        print(f"Connection at {addr}")
+    def connection_made(self, transport):
+        self.transport = transport
+        print(f"UDP server is up and listening on port {self.port}...")
 
+    def datagram_received(self, data, addr):
         try:
-            while True:
-                # data is header + message
-                data = await asyncio.wait_for(reader.read(100), timeout=self.DEFAULT_TIMER)
-                header = struct.unpack(self.FORMAT, data[:7])
+            header = struct.unpack(self.FORMAT, data[:24])
+            if header[0] != self.magic_num or header[1] != self.version:
+                raise ValueError(f"Protocol error: Magic Number or version mismatch. Got {header[0]} and {header[1]}")
 
-                if header[0]!=self.magic_num or header[1]!=self.version:
-                    raise Exception("Protocol error: Magic Number Or version issue")
+            command = header[2]
+            session_id = header[4]
 
-                command = header[2]
-                session_id = header[4]
-                if command == 0:  # HELLO from client
-                    print(f"HELLO from {addr} received")
-                    if session_id in self.sessionData:
-                        raise Exception("Protocol Error: Session initiated")
-                    else:
-                        self.sessionData[session_id] = {
-                            "seq": header[3],
-                            "addr": addr,
-                            "log_clk": header[5],
-                            "state": self.HELLO
-                        }
-                        await self.send_data(0, session_id, writer)  # send HELLO to client
-                elif command == 1:  # DATA from client
-                    print(f"DATA from {addr} received")
-                    if session_id in self.sessionData:
-                        if self.sessionData[session_id]['state']!=self.DATA:
-                            self.sessionData[session_id]['state'] = self.DATA
+            print(f"Received command {command} with session ID {session_id}")
+            print(f"Current Session Data: {self.sessionData}")
 
-                        expected_seq_num = self.sessionData[session_id]['seq'] + 1
-                        if header[3] > expected_seq_num:
-                            raise Exception(f"Lost Packet. Expected Sequence Number {expected_seq_num}, received {header[3]}")
-                        elif header[3] < expected_seq_num:
-                            print(f"Duplicate Packet")
-                        else:
-                            self.sessionData[session_id]['seq'] = header[3]
-
-                        self.received_message = data[7:].decode() if header[6] != 0 else ""
-                        print(f"Data received from client addr {addr} : {self.received_message}")
-                        await self.send_data(2, session_id, writer)
-                    else:
-                        raise Exception("Wild DATA request sent")
-                elif command == 2:  # ALIVE from client
-                    raise Exception("Protocol: Wild ALIVE request sent")
-                elif command == 3:  #  GOODBYE from client
-                    print(f"GOODBYE from {addr} received")
-                    if session_id in self.sessionData:
-                        self.sessionData[session_id]['state'] = self.GOODBYE
-                        self.goodbye(addr, writer)
-                    else:
-                        raise Exception("Wild GOODBYE request sent")
+            if command == self.HELLO:  # HELLO from client
+                print(f"HELLO from {addr} received")
+                if session_id in self.sessionData:
+                    raise ValueError(f"Protocol Error: Session already initiated for session ID {session_id}")
                 else:
-                    raise Exception("Protocol error: Invalid command")
-        except Exception as e:
-            if e is asyncio.TimeoutError:
-                print(f"Connection from {addr} timed out")
-                error_message = 'Timeout! No data received.'.encode()
+                    self.sessionData[session_id] = {
+                        "seq": header[3],
+                        "addr": addr,
+                        "log_clk": header[5],
+                        "state": self.HELLO
+                    }
+                    self.send_data(self.HELLO, session_id, addr)  # send HELLO response to client
+
+            elif command == self.DATA:  # DATA from client
+                print(f"DATA from {addr} received")
+                if session_id in self.sessionData:
+                    expected_seq_num = self.sessionData[session_id]['seq'] + 1
+                    if header[3] > expected_seq_num:
+                        raise ValueError(f"Lost Packet. Expected Sequence Number {expected_seq_num}, received {header[3]}")
+                    elif header[3] < expected_seq_num:
+                        print(f"Duplicate Packet")
+                    else:
+                        self.sessionData[session_id]['seq'] = header[3]
+
+                    self.received_message = data[24:].decode() if header[6] != 0 else ""
+                    print(f"Data received from client addr {addr}: {self.received_message}")
+                    
+                    # Send ALIVE message after receiving DATA
+                    self.send_data(self.DATA, session_id, addr)  # Respond to DATA
+                    self.send_data(self.ALIVE, session_id, addr)  # Send ALIVE response
+                    
+                else:
+                    raise ValueError(f"Wild DATA request sent for session {session_id}")
+
+            elif command == self.GOODBYE:  # GOODBYE from client
+                print(f"GOODBYE from {addr} received")
+                if session_id in self.sessionData:
+                    # Send GOODBYE response before closing the session
+                    self.send_data(self.GOODBYE, session_id, addr)
+                    # Remove session data
+                    self.sessionData.pop(session_id)
+                else:
+                    raise ValueError(f"Wild GOODBYE request sent for session {session_id}")
+
             else:
-                print(e)
-                error_message = 'Protocol Error'.encode()
-            self.goodbye(addr, writer)
-            writer.write(error_message)
-            await writer.drain()
+                raise ValueError(f"Protocol error: Invalid command {command}")
 
-    async def send_data(self, command, session_id, writer):
-        seq_num = self.sessionData[session_id]['seq']
-        header = struct.pack(self.FORMAT, self.magic_num, self.version, command, seq_num, session_id, 0)
+        except ValueError as e:
+            print(f"Value Error: {str(e)}")
+            print(f"Received data: {data}")
+            print(f"Header: {header}")
+            print(f"Session Data: {self.sessionData}")
+        except Exception as e:
+            print(f"Unexpected Error: {str(e)}")
+            print(f"Received data: {data}")
+            print(f"Header: {header}")
+            print(f"Session Data: {self.sessionData}")
 
-        # send header
-        writer.write(header)
-        await writer.drain()
+    def send_data(self, command, session_id, addr):
+        if session_id in self.sessionData:
+            seq_num = self.sessionData[session_id]['seq']
+            header = struct.pack(self.FORMAT, self.magic_num, self.version, command, seq_num, session_id, 0, 0)
+            self.transport.sendto(header, addr)
+        else:
+            print(f"Warning: Attempt to send data for non-existent session ID {session_id}")
 
-    def goodbye(self, session_id, writer):
-        self.send_data(3, session_id, writer)
-        self.sessionData.pop(session_id)
+async def main(port):
+    print(f"Starting UDP server on port {port}")
+    loop = asyncio.get_event_loop()
+    _, protocol = await loop.create_datagram_endpoint(
+        lambda: UAPAsyncUDPServer(port),
+        local_addr=('0.0.0.0', port)
+    )
 
-    async def start(self):
-        self.server = await asyncio.start_server(self.receive_data, self.host, self.port)
-        addr = self.server.sockets[0].getsockname()
-        print(f"Listening at {addr}")
-
-        async with self.server:
-            await self.server.serve_forever()
-
-    async def stop(self):
-        if self.server:
-            self.server.close()
-            await self.server.wait_closed()
-            print("Server closed")
+    try:
+        await asyncio.sleep(360)  # Keep the server running for 1 hour
+    finally:
+        protocol.transport.close()
 
 if __name__ == "__main__":
-    async def main(port):
-        server = UAPAsyncServer(port=port)
-        try:
-            await server.start()
-        except KeyboardInterrupt:
-            await server.stop()
+    if len(sys.argv) != 2:
+        print(f"Usage: {sys.argv[0]} <port>")
+        sys.exit(1)
 
-    asyncio.run(main(int(sys.argv[1])))
+    port = int(sys.argv[1])
+    asyncio.run(main(port))
