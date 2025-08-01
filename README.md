@@ -1,14 +1,13 @@
 
-# 🧠 UDP Client-Server Communication Models (CN Lab)
+# UDP Client-Server Communication Models (CN Lab)
 
 This project showcases two implementations of a **UDP-based Client-Server model** in Python. Developed as part of our *Computer Networks Lab* at IIT Palakkad, it explores:
 
 - **Thread-based architecture**: Concurrent handling of clients using `threading`
 - **Asyncio-based architecture**: Event-driven concurrency using `asyncio` without manual threading
 
----
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 Networks-Client-Server-Model/
@@ -21,7 +20,6 @@ Networks-Client-Server-Model/
 │   └── client.py          # Interactive and file-based client with ALIVE/GOODBYE flow
 ```
 
----
 
 ## How to Run
 
@@ -49,8 +47,6 @@ python3 server.py <port_number>
 python3 client.py <server_ip> <port_number>
 ```
 
----
-
 ## Features Implemented
 
 ✅ Custom binary protocol with headers  
@@ -60,7 +56,6 @@ python3 client.py <server_ip> <port_number>
 ✅ Duplicate and out-of-order packet detection  
 ✅ Clean shutdown using GOODBYE messages  
 
----
 
 ## Contributors
 
