@@ -6,6 +6,8 @@ This project showcases two implementations of a **UDP-based Client-Server model*
 - **Thread-based architecture**: Concurrent handling of clients using `threading`
 - **Asyncio-based architecture**: Event-driven concurrency using `asyncio` without manual threading
 
+> Originally developed in collaboration with [@PranavRao25](https://github.com/PranavRao25)
+
 
 ## Project Structure
 
